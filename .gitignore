@@ -1,0 +1,13 @@
+# .DS_Store
+.DS_Store
+
+# Editor
+.vscode
+
+# Byte-compiled / optimized / DLL files
+__pycache__
+__init__.py
+**.pyc
+
+# Personal database
+balance.db
