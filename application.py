@@ -47,20 +47,8 @@ def index():
         # format for display on page
         format_schedule(scheduled)
 
-        # get future after next pay check
-        next_scheduled = get_next(db, session["user_id"])
-
-        # format for display on page
-        format_schedule(next_scheduled)
-
-        # get future after next pay check
-        future = get_future(db, session["user_id"])
-
-        # format for display on page
-        format_schedule(future)
-
-        return render_template("index.html", balances=balances, scheduled=scheduled, 
-        next_scheduled=next_scheduled, future=future)
+        return render_template("index.html", balances=balances, scheduled=scheduled)
+        #next_scheduled=next_scheduled, future=future
 
     if request.method == "POST":
         data = {}
@@ -84,13 +72,16 @@ def index():
         # get frequencies
         frequencies = get_frequencies(db)
 
+        # get codes
+        codes = get_codes(db)
+
         if data["action"] == "Snooze":
             # render snooze page
             return render_template("snooze.html", item=item)
 
         if data["action"] == "Edit":
             # render edit page
-            return render_template("edit.html", item=item, types=types, frequencies=frequencies)
+            return render_template("edit.html", item=item, types=types, frequencies=frequencies, codes=codes)
 
         else:
             update_schedule(db, session["user_id"], data)
@@ -247,7 +238,10 @@ def add():
         # Get frequencies
         frequencies = get_frequencies(db)
 
-        return render_template("add.html", types=types, frequencies=frequencies)
+        # Get codes
+        codes = get_codes(db)
+
+        return render_template("add.html", types=types, frequencies=frequencies, codes=codes)
 
     if request.method == "POST":
         # Create data dict
@@ -256,6 +250,8 @@ def add():
         # Add schedule fields from form
         data["name"] = request.form.get("name")
         data["type_id"] = request.form.get("type")
+        data['pmt_source'] = request.form.get("pmt-source")
+        data['pmt_method'] = request.form.get("pmt-method")
         data["current_dt"] = request.form.get("current")
         data["frequency_id"] = request.form.get("frequency")
         data["repeat"] = request.form.get("repeat")
@@ -311,6 +307,8 @@ def edit():
         data["id"] = request.form.get("id")
         data["name"] = request.form.get("name")
         data["type_id"] = request.form.get("type")
+        data['pmt_source'] = request.form.get("pmt-source")
+        data['pmt_method'] = request.form.get("pmt-method")
         data["current_dt"] = request.form.get("current")
         data["frequency_id"] = request.form.get("frequency")
         data["repeat"] = request.form.get("repeat")

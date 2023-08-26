@@ -20,7 +20,9 @@ CREATE TABLE 'schedule'
 ,'frequency_id' INTEGER
 , 'repeat' INTEGER DEFAULT 1 
 , 'amount' NUMERIC
-, 'user_id' INTEGER)
+, 'user_id' INTEGER
+, 'pmt_source' TEXT
+, 'pmt_method' TEXT)
 
 CREATE TABLE 'type' 
 ('id' INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL
@@ -33,3 +35,8 @@ CREATE TABLE 'users'
 , 'hash' TEXT)
 
 CREATE INDEX 'user_id' ON "schedule" ("user_id")
+
+CREATE TABLE 'cd'
+('cd' TEXT PRIMARY KEY
+, 'cd_group' TEXT
+, 'cd_desc' TEXT)

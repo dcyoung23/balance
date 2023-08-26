@@ -38,7 +38,7 @@ def login_required(f):
 
 def get_item(db, id):
     # query database for specific schedule item
-    item = db.execute("SELECT A.*,B.label,B.factor,C.frequency,C.modifier,C.n,ifnull(A.snoozed_dt,A.current_dt) dt \
+    item = db.execute("SELECT A.*,B.label,B.factor,C.frequency,C.modifier,C.n,ifnull(A.snoozed_dt,A.current_dt) AS dt \
                       FROM schedule A \
                       INNER JOIN type B ON A.type_id = B.id \
                       INNER JOIN frequency C ON A.frequency_id = C.id \
@@ -49,73 +49,33 @@ def get_item(db, id):
 
 
 def get_scheduled(db, user_id):
-    # query database for scheduled items prior to next pay check (type_id)
-    scheduled = db.execute("SELECT A.*,B.label,B.factor,C.frequency,C.modifier,C.n,ifnull(A.snoozed_dt,A.current_dt) dt \
-                           FROM schedule A \
+    # query database for all scheduled items and use schedule_type for current, next and future
+    scheduled = db.execute("SELECT A.user_id,A.id,A.name,A.type_id,A.current_dt,A.snoozed_dt,A.previous_dt,A.frequency_id,A.repeat,B.label \
+                           ,B.factor,C.frequency,C.modifier,C.n,A.dt,A.pmt_source,D.cd_desc AS pmt_source_desc,A.pmt_method,D2.cd_desc AS pmt_method_desc \
+                           ,A.amount,CASE WHEN dt < pay_current_dt THEN 'Current' \
+                           WHEN dt >= pay_current_dt AND dt < pay_next_dt THEN 'Next' \
+                           WHEN dt >= pay_next_dt THEN 'Future' \
+                           ELSE 'Unknown' END AS schedule_type \
+                           FROM (SELECT *,ifnull(snoozed_dt,current_dt) AS dt FROM schedule) A \
                            INNER JOIN type B ON A.type_id = B.id \
                            INNER JOIN frequency C ON A.frequency_id = C.id \
-                           INNER JOIN ( \
-                           SELECT user_id \
-                           ,MIN(current_dt) AS current_dt \
-                           ,MIN(date(current_dt, (repeat * F.n) || ' ' || F.modifier)) As next_dt \
-                           FROM schedule S \
-                           INNER JOIN frequency F ON S.frequency_id = F.id \
-                           WHERE type_id = 1 \
+                           INNER JOIN \
+                           	(SELECT user_id \
+                           	,MIN(current_dt) AS pay_current_dt \
+                           	,MIN(date(current_dt, (repeat * F.n) || ' ' || F.modifier)) As pay_next_dt \
+                           	FROM schedule S \
+                           	INNER JOIN frequency F ON S.frequency_id = F.id \
+                           	WHERE type_id = 1 \
+                           	AND completed_dt is NULL \
+                           	GROUP BY user_id \
+                           	) P ON A.user_id = P.user_id \
+                           LEFT JOIN cd D ON A.pmt_source = D.cd AND D.cd_group = 'pmt-source' \
+                           LEFT JOIN cd D2 ON A.pmt_method = D2.cd AND D2.cd_group = 'pmt-method' \
+                           WHERE A.user_id = :user_id \
                            AND completed_dt is NULL \
-                           GROUP BY user_id) D ON A.user_id = D.user_id \
-                           WHERE A.user_id = :user_id AND \
-                           completed_dt is NULL AND \
-                           dt < D.current_dt \
-                           ORDER BY dt;", user_id=user_id)
+                           ORDER BY A.Dt;", user_id=user_id)
 
     return scheduled
-
-
-def get_next(db, user_id):
-    # query database for scheduled items prior to next pay check (type_id)
-    next = db.execute("SELECT A.*,B.label,B.factor,C.frequency,C.modifier,C.n,ifnull(A.snoozed_dt,A.current_dt) dt \
-                           FROM schedule A \
-                           INNER JOIN type B ON A.type_id = B.id \
-                           INNER JOIN frequency C ON A.frequency_id = C.id \
-                           INNER JOIN ( \
-                           SELECT user_id \
-                           ,MIN(current_dt) AS current_dt \
-                           ,MIN(date(current_dt, (repeat * F.n) || ' ' || F.modifier)) As next_dt \
-                           FROM schedule S \
-                           INNER JOIN frequency F ON S.frequency_id = F.id \
-                           WHERE type_id = 1 \
-                           AND completed_dt is NULL \
-                           GROUP BY user_id) D ON A.user_id = D.user_id \
-                           WHERE A.user_id = :user_id AND \
-                           completed_dt is NULL AND \
-                           dt >= D.current_dt AND \
-                           dt < D.next_dt\
-                           ORDER BY dt;", user_id=user_id)
-
-    return next
-
-
-def get_future(db, user_id):
-    # query database for all items on or after next pay check (type_id)
-    future = db.execute("SELECT A.*,B.label,B.factor,C.frequency,C.modifier,C.n,ifnull(A.snoozed_dt,A.current_dt) dt \
-                        FROM schedule A \
-                        INNER JOIN type B ON A.type_id = B.id \
-                        INNER JOIN frequency C ON A.frequency_id = C.id \
-                        INNER JOIN ( \
-                        SELECT user_id \
-                        ,MIN(current_dt) AS current_dt \
-                        ,MIN(date(current_dt, (repeat * F.n) || ' ' || F.modifier)) As next_dt \
-                        FROM schedule S \
-                        INNER JOIN frequency F ON S.frequency_id = F.id \
-                        WHERE type_id = 1 \
-                        AND completed_dt is NULL \
-                        GROUP BY user_id) D ON A.user_id = D.user_id \
-                        WHERE A.user_id = :user_id AND \
-                        completed_dt is NULL AND \
-                        dt >= D.next_dt \
-                        ORDER BY dt;", user_id=user_id)
-
-    return future
 
 
 # Format schedule is run separate from get_scheduled for usage in page display
@@ -161,17 +121,14 @@ def get_balances(db, user_id):
     # query database for scheduled
     scheduled = get_scheduled(db, user_id)
 
-    # query database for next scheduled
-    next_scheduled = get_next(db, user_id)
-
     # scheduled available balance
     # amount is converted by factor payments/bills are negative and deposits are positive
-    balances["net"] = balances["available"] + sum(item['amount'] * item['factor'] for item in scheduled)
+    balances["net"] = balances["available"] + sum(item['amount'] * item['factor'] for item in scheduled if item['pmt_source'] == 'CHK' and item['schedule_type'] == 'Current')
 
     # next scheduled available balance
-    balances["next_net"] = balances["net"] + sum(item['amount'] * item['factor'] for item in next_scheduled)
+    balances["next_net"] = balances["net"] + sum(item['amount'] * item['factor'] for item in scheduled if item['pmt_source'] == 'CHK' and item['schedule_type'] == 'Next')
 
-    print(balances)
+    #print(balances)
     return balances
 
 
@@ -214,12 +171,22 @@ def get_frequencies(db):
     return frequencies
 
 
+def get_codes(db):
+    # query database for codes
+    codes = db.execute("SELECT * \
+                        FROM cd \
+                        ORDER BY cd_group, cd;")
+    
+    return codes
+
+
 def insert_schedule(db, user_id, data):
     # insert into schedule
-    db.execute("INSERT INTO schedule (name, type_id, current_dt, frequency_id, repeat, amount, user_id)\
-               VALUES(:name, :type_id, :current_dt, :frequency_id, :repeat, :amount, :user_id);",\
+    db.execute("INSERT INTO schedule (name, type_id, current_dt, frequency_id, repeat, amount, user_id, pmt_source, pmt_method)\
+               VALUES(:name, :type_id, :current_dt, :frequency_id, :repeat, :amount, :user_id, :pmt_source, :pmt_method);",\
                name=data["name"], type_id=data["type_id"], current_dt=data["current_dt"],
-               frequency_id=data["frequency_id"], repeat=data["repeat"], amount=data["amount"], user_id=user_id)
+               frequency_id=data["frequency_id"], repeat=data["repeat"], amount=data["amount"], user_id=user_id,
+               pmt_source=data["pmt_source"], pmt_method=data["pmt_method"])
 
 
 def complete_item(db, id):
@@ -274,9 +241,12 @@ def update_schedule(db, user_id, data):
                        ,frequency_id = :frequency_id \
                        ,repeat = :repeat \
                        ,amount = :amount \
+                       ,pmt_source = :pmt_source\
+                       ,pmt_method = :pmt_method\
                        WHERE id = :id;", id=data["id"], name=data["name"], type_id=data["type_id"],
                        current_dt=data["current_dt"], frequency_id=data["frequency_id"],
-                       repeat=data["repeat"], amount=data["amount"])
+                       repeat=data["repeat"], amount=data["amount"], 
+                       pmt_source=data["pmt_source"], pmt_method=data["pmt_method"])
 
 
 def usd(value):

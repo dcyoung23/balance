@@ -18,6 +18,22 @@
                     {% endfor %}
                 </select>
             </div>
+            <div class="form-group">
+                <select class="form-control" name="pmt-source">
+                    <option disabled="" selected="" >Payment Source</option>
+                    {% for code in codes if code.cd_group == 'pmt-source' %}
+                        <option value={{ code.cd }}>{{ code.cd_desc }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <select class="form-control" name="pmt-method">
+                    <option disabled="" selected="" >Payment Method</option>
+                    {% for code in codes if code.cd_group == 'pmt-method' %}
+                        <option value={{ code.cd }}>{{ code.cd_desc }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <div>Current Due Date:</div>
             <div class="form-group">
                 <input autocomplete="off" autofocus class="form-control" name="current" type="date"/>
